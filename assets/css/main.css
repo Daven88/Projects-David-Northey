@@ -3914,11 +3914,11 @@ input, select, textarea {
     border-radius: 50%;  /* optional: makes it circular */
     display: block;
     margin: 0 auto;
-	margin-top: 10px;
+	margin-top: 0px;
 	
 }
 
 .profile-container {
   text-align: center;
-  margin-top: 20px;
+  margin-top: 0px;
 }

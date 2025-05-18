@@ -3915,9 +3915,9 @@ input, select, textarea {
 	z-index: 1000;
 	border-radius: 50%;
 	overflow: hidden;
-	width: 80px;
-	height: 80px;
-	box-shadow: 0 0 10px rgba(0,0,0,0.3);
+	width: 60px;  /* Smaller size for logo feel */
+	height: 60px;
+	box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
 }
 
 #profile-pic img {
@@ -3925,4 +3925,5 @@ input, select, textarea {
 	height: 100%;
 	object-fit: cover;
 	border-radius: 50%;
+	display: block;
 }

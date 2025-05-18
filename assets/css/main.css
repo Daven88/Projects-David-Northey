@@ -3914,6 +3914,8 @@ input, select, textarea {
     border-radius: 50%;  /* optional: makes it circular */
     display: block;
     margin: 0 auto;
+	margin-top: 10px;
+	
 }
 
 .profile-container {

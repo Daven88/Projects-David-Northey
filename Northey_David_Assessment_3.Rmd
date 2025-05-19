@@ -1,0 +1,611 @@
+---
+title: "Northey_David_Assessment_3"
+author: "David Northey"
+date: "2024-04-22"
+output:
+  word_document: default
+  pdf_document: default
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE, include=FALSE}
+library(tidyverse)
+library(mice)
+library(MASS)
+library(factoextra)
+library(caret)
+library(plotly)
+library(GGally)
+library(pROC)
+```
+
+Abstract
+Diagnosis for Parkinson's Disease is a time-consuming endeavor requiring trained medical staff which can take years to perform accurate assessment. The purpose of this report is to use quantified voice patterns to determine the severity of Parkinson's disease. If successful, this would be a less invasive diagnostic tool than conventional methods. To do this we used Principal Component Analysis (PCA) to reduce the dimensionality of the dataset. The output from this unsupervised learning technique provides low multicollinearity data which meets the assumptions required to perform some of the supervised learning algorithms. These include logistic regression, random forest and K-Nearest Neighbours (kNN). Following these methods, a further unsupervised learning of cluster analysis using k-means was untilised to further explore the nature of the dataset.
+
+The supervised learning models produced based on quantified voice pattern analysis in this investigation performed poorly unfortunately. The random forest and K-NN performed the best but given the small number of patients, the accuracy misdiagnosed patients too readily. Using this dataset, we were unable to accurately predict the severity of Parkinson's disease. When visualising the data Using cluster analysis by k means, most of the data forms in one cluster. Further data collection and analysis will be required to develop better prediction models for Parkinson's disease. 
+
+Introduction
+Parkinson's Disease is a serious medical condition that affects the nervous system. Some diagnostic tools used to determine the severity of the condition include both motor and total Unified Parkinson's Disease Rating Scale (UPDRS). Diagnosing Parkinson's disease can take years too accurately diagnose (Tsanas. A, et al, 2009) requiring a lot of resource, being able to develop new, quicker methods to aid in this diagnosis would be advantageous.
+
+The objectives of this report is to create an accurate training model that can effectively predict whether or not a patient is in two categories of Parkinson's disease, these two categories are 'mild' and 'advanced'. If this can be performed effectively, then voice pattern analysis could be used to accompany or even replace conventional diagnostic techniques for Parkinson's disease. 
+
+
+```{r, echo=FALSE, include=FALSE}
+parkinsons_data <- read.csv("parkinsons_updrs.data") #Load the parkinsons dataset
+
+```
+
+```{r, echo=FALSE, include=FALSE}
+str(parkinsons_data) # View classes of the dataset
+View(parkinsons_data)
+
+summary(parkinsons_data) #Provide summary for each variable. The mean of the
+                        #total_UPDRS is at 29. This will be the value used to
+                        #seperate the two categories in the created 'severity' variable
+```
+
+
+Data
+The data was sourced from the University of California Irvine (UCI) machine learning repository (UCI Machine Learning Repository, 2023). The dataset was collected by recording the voice measurements of 42 patients over a six month period as part of an observational study. The patients have all been diagnosed with early-stage Parkinson's disease. Each of the recording were captured in the patient's own homes. The data was donated to UCI on the 28/10/2009 from the university of Oxford working with ten medical centers in the US.
+
+The Parkinsons dataset has a dimension of 5875 observations by 23 variables. There were no nulls contained within the dataset, so there will be no need to impute/remove missing data. An additional variable will be created which will be a factor of two classes converted from the "total_UPDRS" variable. This will be based on exploratory data analysis techniques and will be used to determine whether or not the quantified voice patterns can be used to identify severity of Parkinson's disease.
+
+Variables
+
+
+
+Exploratory Data Analysis
+
+When viewing the summary of each of the variables, we can confirm that there are no missing values within the dataset. The mean value for total_UPDRS is measuring at 29, therefore this shall be the point at which the severity factor variable will split the classes "mild" and "advanced".  
+
+
+```{r}
+parkinsons_data$severity <- ifelse(parkinsons_data$total_UPDRS > 29, "advanced", "mild")
+                              # This is to create the severity variable
+table(parkinsons_data$severity) %>% prop.table()
+                              # Here we are checking the proportion of each class
+```
+When checking the proportion of the "severity" variable, we can see that there are two groups created that are roughly the same size. 45% are "advanced" and 55% are "mild" which is what we would expect.
+
+To further explore the dataset, some graphs were produced to demonstrate the amount of correlation and distribution type within the dataset.
+
+
+
+
+As we can see from the jitter variables, there is a high amount of correlation within the dataset. Also, it would seem that the distribution is not normally distributed. This would rule out certain classifiers such as Linear Discriminant Analysis (LDA) and Quadratic Discriminant Analysis (QDA) which is an assumption that has been violated. A similar pattern can be seen for the shimmer variables also. Due to the high amount of correlation, it would also not be suitable to use other classifiers that require low multicollinearity to work well.
+
+
+
+To further assess the amount of multicollinarity within the dataset, we shall create a heat map. 
+From the heat map, there is clearly a high amount of multicollinearity present within the dataset.
+```{r, echo=FALSE}
+parkinsons_data$sex <- as.numeric(parkinsons_data$sex) #cor function requires numeric data.
+selected_variables <- parkinsons_data%>% select(-subject., -severity) 
+
+
+correlation_matrix <- cor(selected_variables)
+
+ggplot(data = reshape2::melt(correlation_matrix), aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab",
+                       name="Correlation") +
+  theme_minimal() +
+  coord_fixed() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggtitle("Heatmap showing the amount of correlation for 
+          each variable in the Parkinson's dataset")
+```
+
+Looking at the heat map, there appears to be a strong correlation between the features for the shimmer and jitter variables. 
+
+Methods
+R Studio version 2023.12.1.402 'Ocean Storm' was used for this investigation. 
+
+To address the issue of multicollinearity and a high number of variables, let us perform Principal Component Analysis (PCA) to reduce the dimensionality of the dataset. PCA is in an Unsupervised Learning  and is also good at removing inter-feature correlation by capturing the variation within the dataset. As we are looking to confirm if quantified voice patterns can be used to determine severity of Parkinson's disease, we want to create an accurate model that only uses variables that can be easily obtained. Therefore, the 'severity', 'motor_UPDRS' and 'total_UPDRS' variables will be removed. Next, the data will be required to be scaled. This is as the variation between the variables are different, therefore the mean of each variable will be scaled to equal zero and the standard deviation will equal 1.
+
+Next we will add the 'severity' variable into the PCA output by using the cbind() function and index the appropriate number of principal components based on the scree plot and summary of the principal components obtained. Using this unsupervised learning technique should provide us with some insights as to which variables account for the majority of the variation within the dataset, as well as providing data appropriate for the next stage for our analysis. Next, we will prepare different supervised learning models and assess which will perform the best using an AUC-ROC plot analysis to determine which is this best performing model. For this we will be using logistic regression, random forest and k-nearest neighbours to maximise the chance of determining Parkinson's disease severity using voice pattern analysis.
+
+For each supervised learning algorithm, the null and alternate hypothesis is as follows:
+
+HO: There is no significant relationship between the severity of Parkinson's disease and the variables derived from voice pattern analysis.
+
+HA: There is significant relationship between the severity of Parkinson's disease and the variables derived from voice pattern analysis.
+
+Due to the data having a low multicollinearirty, logistic regression and random forest techniques would be appropriate to use. Due to the scaling performed in the PCA step, the data will be appropriate for use for the kNN classifier. It will be interesting to see how well the kNN and random forest techniques perform as they should perform differently based on outliers present in the data. Generally, kNN will perform poorly in the presence of outliers, where as random forest will be more robust. quote
+
+The data will need to be converted into a training set and test set by dividing the data up into two portions. 80% of the data will be used for training and 20% will be used as the test. This provides around 4700 observations for training which is a good amount to provide an accurate model. Around 1200 observations will provide us with a good amount of feedback into how well the model is performing. If we had only a small amount of test data, we may find that no false negatives or false positives were detected, our test sample size will not have this issue.
+
+For each of the supervised learning methods used, a 10 fold non overlapping cross validation procedure will be used. This way, multiple samples are taken from the data to create the models, improving the accuracy. We will set the seed of each model so that the same data is used, this will help when comparing the performance of each model. Next, we can view the confusion matrix formed from each model and view this information on the AUC-ROC curve. After obtaining results for the models created, we will continue to explore the data using another unsupervised learning method of cluster analysis. We will use k-means analysis to perform  further analysis on the dataset. The k-means analysis will be performed using the same selected variables that was used previously in this investigation. From this analysis, we will be able to see the number of clusters which have formed by using the elbow and silhouette methods. 
+
+Results
+
+
+```{r, echo=FALSE, include=FALSE}
+
+selected_variables <- parkinsons_data %>% select(-subject., -motor_UPDRS, -total_UPDRS, -severity) # Remove variables that would not allow the data to form patterns naturally. Remove -subject variable as this is not a characteristic of the data.
+
+pr.out <- prcomp(selected_variables, center = T, scale=T) ## data is scaled when performing PCA 
+
+pr.out$rotation
+
+pca_data <- as.data.frame(pr.out$x)
+
+comb_data <- cbind(severity = parkinsons_data$severity, pca_data) # adds the severity column back into the PCA data.
+comb_data$severity <- as.factor(comb_data$severity) # turns severity class into factor type. Necessary for algorithms.
+
+fviz_eig(pr.out, addlabels = T) +
+  ggtitle("Scree plot of showing the amount or variation present for each principal component")
+```
+
+Observing the scree plot from the PCA, there does seem to be a significant amount of variation captured within the first two principal components
+
+```{r, echo=FALSE, include=FALSE}
+selected_PC <- comb_data[1:7] # Select the number of principal components that accounts for over 90% of the variation. 
+summary(pr.out)
+```
+
+Originally, only the first two principal components were used due to there being a very distinctive elbow at 2 principal components. However, it could be seen that the performance of each model was quite poor. This could be due to the fact that only 68% of the total variation within the dataset has been captured. This could make the models formed inaccurate, missing key patterns integral to from a good prediction. From using a variety of principal components and fine tuning, it could be seen that the best performance were captured using 6 principal components. With this number of principal components, around 90% of the total data is attributed for this dataset. This could explain why the models perform well using this number of principal components while addressing the original issue of high multicollinearity within the dataset.
+
+```{r, echo=FALSE}
+fviz_pca_var(pr.out,
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = T)
+```
+
+From the plot showing the eigenvectors for each variable, it can be seen that the jitter and shimmer variables all account for a similar amount of the variation. This could potentially suggest that these variables could be used to predict the degree as to how much a patient is affected by Parkinson's disease. 
+
+```{r, echo=FALSE, include=FALSE}
+count_obs <- dim(selected_PC)[1]
+test_index <- sample(count_obs, 
+                               size = as.integer(count_obs*0.2), 
+                               replace = F) ## select test index of principal components data
+
+training_index <- -test_index ## select training index of principal components data
+
+test_data <- selected_PC[test_index, ]
+training_data <- selected_PC[-test_index, ]
+```
+
+logistic regression
+```{r}
+set.seed(10)
+model_lr <- train(form = severity ~ ., 
+                 data = training_data, 
+                 trControl = trainControl(method = 'cv', number = 10),
+                 method = 'glm',
+                 family = 'binomial')
+
+summary(model_lr)
+model_lr
+
+```
+
+```{r}
+set.seed(10)
+prediction_lr <- predict(model_lr, newdata = test_data)
+confusionMatrix(prediction_lr, test_data$severity)
+```
+
+After viewing the summary of the logistic regression model, it would seem that although the p-values of each principal component are significant in rejecting the null hypothesis, the kappa score is quite low. The accuracy of the model is quite low at 61% with low specificity (73%) and sensitivity (46%). Viewing the confusion matrix of the test data, it can be seen that a lot of false negatives and false positives can be identified affecting the quality of this model.
+
+kNN
+```{r}
+
+set.seed(10)
+model_knn <- train(form = severity ~ ., 
+                 data = training_data, 
+                 trControl = trainControl(method = 'cv', number = 10),
+                 method = 'knn')
+
+summary(model_knn)
+model_knn
+
+```
+
+```{r}
+set.seed(10)
+prediction_knn <- predict(model_knn, newdata = test_data)
+confusionMatrix(prediction_knn, test_data$severity)
+
+```
+
+The kappa and accuracy measurements of the k-nearest neighbours model has performed better than the logistic regression model. The kappa and accuracy values are higher indicating that this could be a respectable method to assess the severity of a patient in terms of Parkinson's disease. When viewing the confusion matrix of the test data, it can be observed that the accuracy measured at 78% with sensitivity of 79% and specificity of 78%. Although this model has performed better than the logistic regression model, there are still plenty of patients that have been misdiagnosed using the model from kNN.
+
+Random Forest
+```{r}
+set.seed(10)
+model_rf <- train(form = severity ~ ., 
+                  data = training_data, 
+                  trControl = trainControl(method = 'cv', number = 10),
+                  method = 'rf')
+
+summary(model_rf)
+model_rf
+
+```
+
+
+```{r}
+set.seed(10)
+prediction_rf <- predict(model_rf, newdata = test_data)
+confusionMatrix(prediction_rf, test_data$severity)
+
+```
+
+From the random forest model, the results have performed similarly as the k-NN model. The kappa (57%) and accuracy (79%) scores of the random forest model are similar to the k-NN model. The confusion matrix of the test data demonstrates that the model has been able to classify the two classes quite well although there are still numerous false positives and false negatives which have been identified in the output. Overall the best performing algorithm for this dataset has been the random forest technique. This can also be seen when viewing the ROC-AUC curve plotted: 
+
+AUC-ROC graph
+```{r, echo=FALSE}
+set.seed(10)
+test_data$severity_numeric <- ifelse(test_data$severity == "advanced", 1, 0) # Insert a variable that is
+                                                                            # in numeric format for severity
+
+prob_knn <- predict(model_knn, newdata = test_data, type = "prob") # Create probability values for the ROC curve
+                                                                  # for each supervised learning model.    
+prob_rf <- predict(model_rf, newdata = test_data, type = "prob")
+
+prob_lr <- predict(model_lr, newdata = test_data, type = "prob")
+
+
+roc_knn <- roc(test_data$severity_numeric, prob_knn[,"advanced"]) # Creates the roc curve for each model
+
+roc_lr <- roc(test_data$severity_numeric, prob_lr[,"advanced"])
+
+roc_rf <- roc(test_data$severity_numeric, prob_rf[,"advanced"])
+
+
+plot(roc_knn, col = "blue", main = "ROC Curves", legacy.axes = TRUE, print.auc = F) # plot the curves on one graph
+plot(roc_lr, col = "red", add = TRUE, print.auc = F, legacy.axes = TRUE)
+plot(roc_rf, col = "green", add = TRUE, print.auc = F, legacy.axes = TRUE)
+
+
+legend("bottomright", legend = c("k-NN", "Logistic Regression", "Random Forest"), col = c("blue", "red", "green"), lty = c(1, 1, 1)) # Add a legend to the graph
+
+text(0.2, 0.5, paste("k-NN AUC =", round(auc(roc_knn), 2)), col = "blue") # print the AUC scores on the graph
+text(0.2, 0.4, paste("LR AUC =", round(auc(roc_lr), 2)), col = "red")
+text(0.2, 0.3, paste("RF AUC =", round(auc(roc_rf), 2)), col = "green")
+
+```
+
+From the ROC-AUC curve, it is clear that the best performing model was the random forest algorithm. Here we can see that the area under the curve value is the highest at 0.89. The k-NN also performed similarly with an area of 0.86. The worst performing was the logistic regression model with an area of 0.63. It is unusual that the k-NN and random forest algorithms performed similarly as the k-NN does not perform well with outliers, conversely the random forest can perform effectively. To further explore the data, an unsupervised learning technique of k-means was deployed. For the k-means analysis, we would like to test the following hypothesis:
+
+Ho: The variables associated with voice pattern analysis will not form into two cluster types for parkinson's disease severity categorical type.
+
+HA: The variables associated with voice pattern analysis will form into two cluster types for parkinson's disease severity categorical type.
+
+
+```{r}
+selected_variables <- parkinsons_data %>% select(-subject., -motor_UPDRS, -total_UPDRS, -severity)
+
+std_cluster <- scale(selected_variables) ## scale the dataset
+set.seed(10)
+k2 <- kmeans(std_cluster, centers = 2, nstart = 10)
+
+k2$betweenss/k2$totss ## calculated to show variation explained by clustering
+
+parkinsons_data$severity <- as.character(parkinsons_data$severity)
+
+table(k2$cluster) %>% prop.table()
+table(parkinsons_data$severity) %>% prop.table()
+
+```
+
+When observing the amount of variation which is explained by the clusters within the dataset, the score is only 34% which indicates that the clusters are not very distinct. When viewing the ratio of the two severity classes, the ratio is 45:55. When viewing the cluster sizes, it could be observed that the one cluster makes up 96% of the data and the other only makes up 4%. It would appear that most of the data is clustered in one area. Let us identify if there are truly 2 clusters whch form within the dataset using the elbow method and silhouette techniques. 
+
+```{r, echo=FALSE}
+set.seed(10)
+fviz_nbclust(std_cluster, kmeans, method='wss')
+```
+
+```{r, echo=FALSE}
+
+set.seed(10)
+fviz_nbclust(std_cluster, kmeans, method='silhouette')
+
+```
+
+There was not a very distinctive elbow formed using the elbow method, but there did seem to be an a slight elbow that formed between 2 and 3 clusters.When viewing the silhouette method, it was very clear that the number of clusters in the dataset is 2. Let us see the clusters visually using k = 2 to see if there is a pattern of the position of 'advanced' and 'mild' within the 2 clusters which have been identified.
+
+```{r, echo=FALSE}
+fviz_cluster(list(data = std_cluster, cluster = k2$cluster),
+             geom = "point",
+             shape = 1,
+             show.clust.cent = F) +
+  geom_point(aes(colour = parkinsons_data$severity)) +
+  ggtitle("K-means Clusters of the variables asssociated with voice pattern analysis")
+
+
+```
+
+
+When viewing the data, there does seem to be two clusters of data present. However, the clusters which are formed are not ordered by the severity category. From observing this cluster analysis, we cannot observe any useful patterns within the dataset. Because of this we cannot reject the null hypothesis. Therefore there is no evidence that the variables associated with voice pattern analysis form into two clusters.
+
+
+conclusion
+Although the random forest and kNN supervised learning algorithms could categorise the two classes of severity to a rough degree of accuracy, it should be noted that the data does have some limitations. This whole dataset was based only on 42 patients, each of whom recorded around 200 voice recordings. With this in mind, the supervised models should be performing much more accurately as the same patients would likely produce similar voice patterns. 
+
+Also, the patients used for this analysis were early onset parkinson cases. Therefore, the voice readings and total UPDRS scores would have only been from a small proportion of the total scale. This could potentially explain why there was no distinct clusters formed in the dataset when performing cluster analysis. It may also explain why the supervised learning algorithms did not perform as well as they should have. It would be interesting if it were possible to collect further data from patients who had more developed cases of Parkinson's disease and from a larger number of patients as well. All that we have been able to prove in this report, is that we can loosely diagnose the same 42 patients with slightly different voice patterns. 
+
+This method could be a useful tool to aid doctors in the diagnosis of parkinson's disease, but further study will be required to develop more robust algorithms using a greater number of patients.
+
+
+references:
+
+Ivey, F.M, Katzel, L,I. Sorkin, J.D, Macko, R. F, Shulman, L. M. (2012). The Unified Parkinson's Disease Rating Scale as a predictor of peak aerobic capacity and ambulatory function. Journal of Rehabilitation Research and Development, 49(8), 1269-1276. https://doi.org/10.1682/jrrd.2011.06.0103
+
+James,G. Witten,D. Hastie, T. Tibshirani, R.(2021), 'An introduction to Statistical Learning'. Springer.
+
+Little, M.A, McSharry, P.E, Hunter, E.J, Spielman, J, Ramig, L.O. (2009). Suitability of dysphonia measurements for telemonitoring of Parkinson's disease. IEEE Transactions on Biomedical Engineering, 56(4), 1015. https://doi.org/10.1109/TBME.2008.2005954
+
+Neurotoolkit. (2018). Unified Parkinson's Disease Rating Scale -- NeurologyToolKit. https://neurotoolkit.com/updrs/
+
+Tsanas, A. Little, M,A. McSharry, P.E. Ramig, L.O. (2010),
+'Accurate telemonitoring of Parkinson’s disease progression by non-invasive speech tests',
+IEEE Transactions on Biomedical Engineering, 57(4), 884-893. https://DOI:10.1109/TBME.2009.2036000
+
+UCI Machine Learning Repository.(2023). Parkinsons Telemonitoring. https://archive.ics.uci.edu/dataset/189/parkinsons+telemonitoring
+
+Verzani, J. (2014). 'Using R for Introductory statistics'. CRC Press.
+
+
+R Code
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(mice)
+library(MASS)
+library(factoextra)
+library(caret)
+library(plotly)
+library(GGally)
+library(pROC)
+```
+
+
+```{r, results='hide'}
+parkinsons_data <- read.csv("parkinsons_updrs.data") #Load the parkinsons dataset
+
+```
+
+```{r, results='hide'}
+str(parkinsons_data) # View classes of the dataset
+View(parkinsons_data)
+
+summary(parkinsons_data) #Provide summary for each variable. The mean of the
+                        #total_UPDRS is at 29. This will be the value used to
+                        #seperate the two categories in the created 'severity' variable
+```
+
+```{r, results='hide'}
+parkinsons_data$severity <- ifelse(parkinsons_data$total_UPDRS > 29, "advanced", "mild")
+                              # This is to create the severity variable
+table(parkinsons_data$severity) %>% prop.table()
+                              # Here we are checking the proportion of each class
+```
+
+```{r, results='hide'}
+parkinsons_data %>%
+  ggpairs(columns = c(7,8,9,10,11), aes(colour=severity)) %>%
+  ggplotly()
+
+```
+
+```{r, results='hide'}
+parkinsons_data%>%
+  ggpairs(columns = c(12,13,14,15,16), ggplot2::aes(colour=severity)) %>%
+  ggplotly()
+
+```
+
+```{r, results='hide'}
+parkinsons_data_long <- parkinsons_data %>%
+  pivot_longer(cols = c(motor_UPDRS, total_UPDRS), names_to = "variable", values_to = "value")
+
+ggplot(parkinsons_data_long, aes(x = variable, y = value, fill = variable)) +
+  geom_boxplot() +
+  labs(title = "Boxplots of motor and total UPDRS", x = "Variable", y = "Value") +
+  theme_minimal()
+
+```
+
+```{r, results='hide'}
+parkinsons_data$sex <- as.numeric(parkinsons_data$sex) #cor function requires numeric data.
+selected_variables <- parkinsons_data%>% select(-subject., -severity) 
+
+
+correlation_matrix <- cor(selected_variables)
+
+ggplot(data = reshape2::melt(correlation_matrix), aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab",
+                       name="Correlation") +
+  theme_minimal() +
+  coord_fixed() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+PCA
+
+```{r, results='hide'}
+
+selected_variables <- parkinsons_data %>% select(-subject., -motor_UPDRS, -total_UPDRS, -severity) # Remove variables that would not allow the data to form patterns naturally. Remove -subject variable as this is not a characteristic of the data.
+
+pr.out <- prcomp(selected_variables, center = T, scale=T) ## data is scaled when performing PCA 
+
+pr.out$rotation
+
+pca_data <- as.data.frame(pr.out$x)
+
+comb_data <- cbind(severity = parkinsons_data$severity, pca_data) # adds the severity column back into the PCA data.
+comb_data$severity <- as.factor(comb_data$severity) # turns severity class into factor type. Necessary for algorithms.
+
+fviz_eig(pr.out, addlabels = T)
+```
+
+```{r, results='hide'}
+selected_PC <- comb_data[1:7] # Select the number of principal components that accounts for over 90% of the variation. 
+summary(pr.out)
+```
+
+```{r, results='hide'}
+fviz_pca_var(pr.out,
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = T)
+```
+
+Supervised Learning
+```{r, results='hide'}
+count_obs <- dim(selected_PC)[1]
+test_index <- sample(count_obs, 
+                               size = as.integer(count_obs*0.2), 
+                               replace = F) ## select test index of principal components data
+
+training_index <- -test_index ## select training index of principal components data
+
+test_data <- selected_PC[test_index, ]
+training_data <- selected_PC[-test_index, ]
+```
+
+Logistic regression
+```{r}
+set.seed(10)
+model_lr <- train(form = severity ~ ., 
+                 data = training_data, 
+                 trControl = trainControl(method = 'cv', number = 10),
+                 method = 'glm',
+                 family = 'binomial')
+
+summary(model_lr)
+model_lr
+
+```
+
+```{r}
+set.seed(10)
+prediction_lr <- predict(model_lr, newdata = test_data)
+confusionMatrix(prediction_lr, test_data$severity)
+```
+
+kNN
+```{r}
+
+set.seed(10)
+model_knn <- train(form = severity ~ ., 
+                 data = training_data, 
+                 trControl = trainControl(method = 'cv', number = 10),
+                 method = 'knn')
+
+summary(model_knn)
+model_knn
+
+```
+
+```{r}
+set.seed(10)
+prediction_knn <- predict(model_knn, newdata = test_data)
+confusionMatrix(prediction_knn, test_data$severity)
+
+```
+
+Random forest
+```{r}
+set.seed(10)
+model_rf <- train(form = severity ~ ., 
+                  data = training_data, 
+                  trControl = trainControl(method = 'cv', number = 10),
+                  method = 'rf')
+
+summary(model_rf)
+model_rf
+
+```
+
+```{r}
+set.seed(10)
+prediction_rf <- predict(model_rf, newdata = test_data)
+confusionMatrix(prediction_rf, test_data$severity)
+
+```
+
+AUC-ROC graph
+```{r, results='hide'}
+set.seed(10)
+test_data$severity_numeric <- ifelse(test_data$severity == "advanced", 1, 0) # Insert a variable that is
+                                                                            # in numeric format for severity
+
+prob_knn <- predict(model_knn, newdata = test_data, type = "prob") # Create probability values for the ROC curve
+                                                                  # for each supervised learning model.    
+prob_rf <- predict(model_rf, newdata = test_data, type = "prob")
+
+prob_lr <- predict(model_lr, newdata = test_data, type = "prob")
+
+
+roc_knn <- roc(test_data$severity_numeric, prob_knn[,"advanced"]) # Creates the roc curve for each model
+
+roc_lr <- roc(test_data$severity_numeric, prob_lr[,"advanced"])
+
+roc_rf <- roc(test_data$severity_numeric, prob_rf[,"advanced"])
+
+
+plot(roc_knn, col = "blue", main = "ROC Curves", legacy.axes = TRUE, print.auc = F) # plot the curves on one graph
+plot(roc_lr, col = "red", add = TRUE, print.auc = F, legacy.axes = TRUE)
+plot(roc_rf, col = "green", add = TRUE, print.auc = F, legacy.axes = TRUE)
+
+
+legend("bottomright", legend = c("k-NN", "Logistic Regression", "Random Forest"), col = c("blue", "red", "green"), lty = c(1, 1, 1)) # Add a legend to the graph
+
+text(0.2, 0.5, paste("k-NN AUC =", round(auc(roc_knn), 2)), col = "blue") # print the AUC scores on the graph
+text(0.2, 0.4, paste("LR AUC =", round(auc(roc_lr), 2)), col = "red")
+text(0.2, 0.3, paste("RF AUC =", round(auc(roc_rf), 2)), col = "green")
+
+```
+
+
+```{r, results='hide'}
+selected_variables <- parkinsons_data %>% select(-subject., -motor_UPDRS, -total_UPDRS, -severity)
+
+std_cluster <- scale(selected_variables) ## scale the dataset
+set.seed(10)
+k2 <- kmeans(std_cluster, centers = 2, nstart = 10)
+
+k2$betweenss/k2$totss ## calculated to show variation explained by clustering
+
+parkinsons_data$severity <- as.character(parkinsons_data$severity)
+
+table(k2$cluster) %>% prop.table()
+table(parkinsons_data$severity) %>% prop.table()
+
+```
+
+
+```{r, results='hide'}
+set.seed(10)
+fviz_nbclust(std_cluster, kmeans, method='wss')
+```
+
+```{r, results='hide'}
+
+set.seed(10)
+fviz_nbclust(std_cluster, kmeans, method='silhouette')
+
+```
+
+
+```{r, results='hide'}
+fviz_cluster(list(data = std_cluster, cluster = k2$cluster),
+             geom = "point",
+             shape = 1,
+             show.clust.cent = F) +
+  geom_point(aes(colour = parkinsons_data$severity)) +
+  ggtitle("K-means Clusters of the variables asssociated with voice pattern analysis")
+
+
+```
+

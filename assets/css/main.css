@@ -3922,3 +3922,19 @@ input, select, textarea {
   text-align: center;
   margin-top: 0px;
 }
+
+/* === Custom Fix: Show full image in .spotlights === */
+@media screen and (min-width: 768px) {
+  .spotlights .image img {
+    object-fit: contain;
+    width: 100%;
+    height: auto;
+  }
+
+  .spotlights .image {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+}
